@@ -1,0 +1,67 @@
+# Use Python 3.10 as base image (3.11 has compatibility issues)
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gfortran \
+    liblapack-dev \
+    libblas-dev \
+    libatlas-base-dev \
+    wget \
+    curl \
+    git \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV JUPYTER_ENABLE_LAB=yes
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install Jupyter and extensions
+RUN pip install \
+    jupyterlab \
+    jupyter-server-proxy \
+    ipywidgets \
+    matplotlib \
+    plotly \
+    bokeh \
+    seaborn
+
+# Copy and install IDAES-PSE (from current context)
+COPY . /app/idaes-pse/
+WORKDIR /app/idaes-pse
+RUN pip install -e .[ui,grid,omlt,coolprop,testing]
+
+# Note: IDAES-UI will be mounted as volume in docker-compose
+# Create placeholder directory
+RUN mkdir -p /app/idaes-ui
+
+# Install playwright for UI testing
+RUN pip install playwright==1.42.0 && playwright install --with-deps
+
+# Download IDAES extensions
+RUN idaes get-extensions --verbose
+
+# Create notebooks directory
+RUN mkdir -p /app/notebooks
+
+# Set working directory
+WORKDIR /app
+
+# Expose Jupyter port
+EXPOSE 8888
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8888 || exit 1
+
+# Default command
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token="]
